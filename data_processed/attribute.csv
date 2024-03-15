@@ -1,0 +1,49 @@
+trait,type,attribute,att_old,att_NB
+Size,Effect,S1,sr<10,6
+Size,Effect,S2,sr11-20,6
+Size,Effect,S3,sr21-100,6
+Size,Effect,S4,sr101-200,6
+Size,Effect,S5,sr201-500,6
+Size,Effect,S6,sr>500,6
+Morphology,Response,MOsof,mSoft,6
+Morphology,Response,MOtun,mTunic,6
+Morphology,Response,MOexo,mExoskeleton (chitin/calcium carbonate),6
+Morphology,Response,MOcru,mCrustose ,6
+Morphology,Response,MOcus,mCushion,6
+Morphology,Response,MOsta,mStalked,6
+Longevity,Effect,L1,l<1,4
+Longevity,Effect,L2,"l1-2 (should be >1, <3)",4
+Longevity,Effect,L3,l3-10,4
+Longevity,Effect,L4,l>10,4
+Larvae,Effect,LDpk,ldPlanktotrophic,3
+Larvae,Effect,LDlc,ldLecithotrophic,3
+Larvae,Effect,LDdi,ldDirect,3
+EggDevelopment,Response,EDasx,edAsexual/Budding,4
+EggDevelopment,Response,EDsxpl,edSexual shed eggs- pelagic,4
+EggDevelopment,Response,EDsxbe,edSexual shed eggs- benthic,4
+EggDevelopment,Response,EDsxbr,edSexual brood eggs,4
+LivingHabit,Response,LHtub,lhTube-dwelling,6
+LivingHabit,Response,LHbur,lhBurrow-dwelling,6
+LivingHabit,Response,LHfre,lhFree-living,6
+LivingHabit,Response,LHcre,lhCrevice/hole/under stone,6
+LivingHabit,Response,LHepi,lhEpi/endo biotic ,6
+LivingHabit,Response,LHatt,lhAttached to substratum,6
+SedimentPosition,Response,Sd0,spSurface,4
+SedimentPosition,Response,Sd1,spInfauna: 0-5cm,4
+SedimentPosition,Response,Sd2,spInfauna: 6-10cm,4
+SedimentPosition,Response,Sd3,spInfauna: >10cm,4
+Feeding,Effect,Fspf,fSuspension ,6
+Feeding,Effect,Fsdf,fSurface Deposit ,6
+Feeding,Effect,Fssf,fSubsurface deposit,6
+Feeding,Effect,Fsca,fScavenger/Opportunist,6
+Feeding,Effect,Fprd,fPredator,6
+Feeding,Effect,Fpar,fParasite,6
+Mobility,Response,M1,mobSessile,4
+Mobility,Response,M4,mobSwim,4
+Mobility,Response,M3,mobCrawl/creep/climb,4
+Mobility,Response,M2,mobBurrower,4
+Reworking,Effect,Rdif,bDiffusive mixing,5
+Reworking,Effect,Rsrf,bSurface deposition,5
+Reworking,Effect,Rup,bUpward Conveyor ,5
+Reworking,Effect,Rdow,bDownwards conveyer,5
+Reworking,Effect,Rno,bNone,5
