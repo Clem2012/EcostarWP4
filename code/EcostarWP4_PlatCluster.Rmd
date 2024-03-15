@@ -1,0 +1,234 @@
+---
+title: "EcostarWP4_Platform Clustering"
+author: "Clement Garcia"
+date: "2024-03-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+## Installing required libraries and loading them:
+pkgs = c("tidyverse", "vegan", "patchwork", "devtools", "PCDimension", "ggrepel", "rnaturalearth", "sinkr")
+for(p in pkgs){
+  if(!require(p, character.only = TRUE)) install.packages(p)
+  library(p, character.only = TRUE)
+} 
+install_github("marchtaylor/sinkr")
+
+## Data
+setwd("C:/Users/cg05/OneDrive - CEFAS/Science/Project - Commercial/INSITE/INSITE II/online/EcostarWP4/")
+load("./data_processed/NS_UKBandENV.RData")
+load("./data_processed/UKBenthos_spePlat.RData")
+NS_Plat_location<-read.csv("./data_processed/NS_Plat_location.csv")
+
+```
+
+We ordinate the different platforms according to their environmental variables (from the DataPre script) and then cluster to control for the environmental context when testing for difference in structure and function close and far from the platforms.
+Depth: Water depth (in m)
+MD0: Median grain size of sediment (Phi units).
+Mud: Silt/clay content of the sediment (percentage by weight of the sub 63 μm fraction of the sediment).
+OM: Organic content of the sediment (percentage by weight of organic material in the sediment).
+Distance: Distance to coast (in m)
+Current: Bottom current
+
+## PCA
+
+```{r PCAprep, echo=FALSE}
+## Data reconstruction
+#Formatting to have a numeric data frame to scale
+rownames(NS_ENV)<-NS_ENV$PLAT_CAT
+NS_ENV$PLAT_CAT<-NULL
+NS_ENVsc<-scale(NS_ENV)
+
+#Completing the dataset because of missing value using dineof function (from sinkr)
+set.seed(3180)
+temp<-dineof(NS_ENVsc)
+NS_ENVsc<-temp$Xa
+
+```
+```{r PCA, echo=TRUE}
+## PCA
+PLAT.PCA<-rda(NS_ENVsc)
+## Extracting the eigenvalues
+length(evPLAT <- PLAT.PCA$CA$eig)
+
+## Broken stick method helps to justify how many axes to select
+bsPLAT<-brokenStick(1:6, 6)
+eigPLAT<<-data.frame(EIGEN = 1:6, eigP = (PLAT.PCA$CA$eig/sum(PLAT.PCA$CA$eig))*100, bsPLAT = bsPLAT/sum(bsPLAT)*100)
+
+ggplot(eigPLAT, aes(x=EIGEN, y=eigP)) +
+  geom_bar(stat="identity", aes(fill = eigP>15))+
+  geom_line(aes(y=bsPLAT), colour = "red")+
+  geom_point(aes(y=bsPLAT), colour = "red")+
+  scale_fill_grey(start = 0.8, end = 0, guide = 'none')+
+  labs(x = 'PC', y = '% Variance')+
+  theme_bw()+
+  ggtitle("Platform - Environment")
+
+## PCA parameters*****************************
+axes <- c(1,2) # scree plot 2 axes are enough
+site.scaling <- 1 # Default
+env.scaling <- 2 # Default
+goodness.axis <- 2 # Number of axis kept
+goodness.tresh <- 2/6 # Ease of representation
+#*********************************************
+
+## c_sq data
+PLAT.scores <- as.data.frame(scores(PLAT.PCA, scaling = site.scaling, display="sites", choices=axes))
+axes_name.PLAT <- colnames(PLAT.scores)
+
+```
+Broken stick shows that 3 principal axes are necessary but for clarity we only kept 2.
+The following show that the k-mean method with and SSI criterion to justify how many clusters the different platforms belong to. Results show that ideally there would be 14 or 8 clusters but that would be difficult to manipulate.
+We therefore only kept 5 for clarity.
+
+```{r Cluster, echo=TRUE}
+## Cluster analysis on the PCA output
+set.seed(8110)
+
+## SSI method to justify the number of cluster
+PLAT.PCA.KM<-cascadeKM(PLAT.scores, inf.gr=2, sup.gr=20, iter=100, criterion = "ssi")
+summary(PLAT.PCA.KM)
+plot(PLAT.PCA.KM, sortg=T)
+## Number of cluster 5, 8 & 14
+g4<-as.data.frame(PLAT.PCA.KM$partition[,4])
+g7<-as.data.frame(PLAT.PCA.KM$partition[,7])
+g13<-as.data.frame(PLAT.PCA.KM$partition[,13])
+
+## number of instances
+xtabs( ~g4[,1],g4) 
+xtabs( ~g7[,1],g7) 
+xtabs( ~g13[,1],g13) 
+
+## Add clusters to PC scores
+PLAT.scores<- cbind(PLAT.scores, g4, g7, g13)
+colnames(PLAT.scores)[c(3:5)]<-c("cluster5", "cluster8", "cluster14")
+
+## Add clusters to raw data 
+NS_ENVsc<-as.data.frame(NS_ENVsc)
+NS_ENVsc$PLAT_CAT<-rownames(NS_ENVsc)
+NS_ENVsc<-cbind(NS_ENVsc, PLAT.scores)
+
+PLATdf<-NS_ENVsc %>% 
+  gather(environment, value, Depth:Current)
+
+gPLAT<-ggplot(PLATdf, aes(x=environment, y=value, colour = factor(cluster5))) + 
+  geom_boxplot() +
+  stat_summary(fun=mean, geom="point", shape=5, size=4)+
+  theme_bw() +
+  xlab("")+
+  scale_colour_discrete(name="Cluster")+
+  theme(axis.text.x  = element_text(angle=45, vjust=0.5, size=9))+
+  facet_grid(.~cluster5)
+
+gPLAT
+#ggsave('./figures/ClusPlat.png')
+```
+The boxplot show the characteristics of each of the 5 clusters.
+Cluster 1 is intermediate muddy
+Cluster 2 is deep muddy
+Cluster 3 is the average cluster with no discernible characteristics
+Cluster 4 is shallow muddy
+Cluster 5 is shallow coarse
+```{r PCAoutput, echo=TRUE}
+## Descriptor scores
+env.scores <- scores(PLAT.PCA, scaling=env.scaling, display="species", choices=axes)
+
+## Retrieve the goodness of fit of the species
+env_fit.sum <- goodness(PLAT.PCA, model="CA",statistic="explained")
+
+## Combine scores and  goodness of fit for the selected axis
+env.scores <- data.frame(environment=rownames(env.scores), env.scores, fit=env_fit.sum[,goodness.axis])
+
+## Calculate the variance represented by each axis
+var_axes <- round(PLAT.PCA$CA$eig/sum(PLAT.PCA$CA$eig)*100,2)
+
+## Representativity of species on the three axes
+AVrep<-ggplot(env.scores, aes(x= reorder(environment, -fit), y= fit)) + 
+  geom_bar(stat="identity", aes(fill = fit>0.33)) +
+  geom_hline(yintercept = 0.33)+
+  scale_fill_grey(start = 0.8, end = 0, guide = 'none')+
+  scale_x_discrete(name="Representativity") +
+  scale_y_continuous(name="Taxa")+
+  theme_bw()+
+  theme(axis.text.x  = element_text(angle=45, vjust=1, hjust=1, size=10))+
+  ggtitle("Goodness")
+
+
+## c_sq plot (scaling 1)
+## PC1 v PC2
+pPLAT.PCA<-ggplot(data=PLAT.scores, 
+                aes(x = PC1, y = PC2, colour = factor(cluster5)))+
+  geom_point(size=1)+
+  geom_hline(yintercept=0, linetype="dotted") +
+  geom_vline(xintercept=0, linetype="dotted") +
+  stat_ellipse(type="norm", geom="polygon", alpha=0.1, linetype=2)+
+  xlab(paste(axes_name.PLAT[1],": ",var_axes[1],"%"))+
+  ylab(paste(axes_name.PLAT[2],": ",var_axes[2],"%"))+
+  theme_bw()+
+  theme(legend.position="FALSE")+
+  ggtitle("Platform cluster")
+
+## Environment plot (scaling 2)
+pPLAT.PCA.Env<-ggplot()+
+  geom_point(data=PLAT.scores, 
+             aes(x = PC1*2, y = PC2*2, colour = as.factor(cluster5)),
+             size=2, alpha=0.3)+
+  geom_segment(data=env.scores,
+               aes(x=0, xend=PC1, y=0, yend=PC2),
+               color="black", arrow=arrow(length=unit(0.01,"npc")))+
+  geom_text_repel(data=env.scores,
+                  aes(x=PC1,y=PC2,
+                      label=env.scores[, "environment"]),
+                  color="black", fontface='bold', size=3)+
+  geom_hline(yintercept=0, linetype="dotted") +
+  geom_vline(xintercept=0, linetype="dotted") +
+  xlab(paste(axes_name.PLAT[1],": ",var_axes[1],"%"))+
+  ylab(paste(axes_name.PLAT[2],": ",var_axes[2],"%"))+
+  theme_bw()+
+  theme(axis.title = element_text(size=10),
+        axis.text  = element_text(size=10),
+        legend.position="FALSE")
+
+#pdf('./figures/PCA_PLAT.pdf',
+#    width = 10, height = 6) 
+pPLAT.PCA.Env + AVrep + plot_annotation(tag_levels = 'a')
+#dev.off()
+
+PLAT.scores$PLAT_CAT<-rownames(PLAT.scores)
+PLAT.scores<-left_join(PLAT.scores, NS_Plat_location)
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+
+ggplot()+
+  geom_sf(data = world)+
+  geom_point(data = PLAT.scores,
+             aes(x = LONG_PLAT_avg, y=LAT_PLAT_avg, colour = factor(cluster5)), size=0.5)+
+  theme(legend.position="none")+
+  xlab('')+
+  ylab('')+
+  ylim(48, 63)+
+  xlim(-10, 8)
+#ggsave('./figures/MapPlat.png')
+
+```
+Geographic representation show that Cluster 1 (red - intermediate muddy), 2 (yellow - deep muddy) and 4 (blue - shallow muddy) ranges from the East of the North North Sea by the Norwegian trench (2), East of Scotland (1) and south of the North North Sea (3). The two remaining clusters are the average cluster (3) which is spread equally across the central North Sea from North to South and the 5 (purple) is characterised by the shallow coarse area in the south North Sea.
+
+```{r wrapUp, echo=FALSE}
+## Cluster number to station data
+PLAT.Clus<-PLAT.scores[, c("cluster5", "cluster8", "cluster14", "PLAT_CAT")]
+UKB_Station<-left_join(UKB_Station, PLAT.Clus)
+
+## Formatting station file
+colnames(UKB_Station)<-c("site", "survey", "year", "stat_no", "plat_name", "plat_no", "lat_stat", "long_stat", "lat_plat", "long_plat", "lat_plat_dec", "long_plat_dec", "lat_stat_dec", "long_stat_dec", "distance", "bearing", "depth_stat", "depth_plat", "plat_cat", "cluster5", "cluster8", "cluster14")
+
+STAT.clus<-UKB_Station[, c("site", "distance", "cluster5", "cluster8", "cluster14")]
+
+spePlat<-left_join(spePlat, STAT.clus)
+spePlat$B<-spePlat$A * spePlat$Meanbodymass
+#save(spePlat, file="./spePlat.RData")
+
+```
+
+## END

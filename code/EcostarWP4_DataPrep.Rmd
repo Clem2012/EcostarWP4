@@ -51,7 +51,7 @@ theme_set(theme_bw())
 
 The original source of the biological data are stored in data_raw, from which the Essex team (UoE) did a thorough clean, standardisation and various formatting, the details of which are fully explained in the "data_processed/README.md".
 
-```{r formatData, echo=TRUE, results = 'hide', warning=FALSE, eval=FALSE}
+```{r bioFormat, echo=TRUE, results = 'hide', warning=FALSE, eval=FALSE}
 ## Adding Juvenile data * not to be done again
 nameCor<-read.csv("./Name_Correction.csv")
 SITE<-UKB_speMaster %>% 
@@ -190,8 +190,166 @@ spePlat<-left_join(spePlat, body_mass, by = c("acceptedName" = "ScientificName_a
 
 There was not much environmental information in the original dataset, therefore we used available data from raster (Mitchell et al. 2019) was used in conjonction with platform coordinates to extract the relevant data.
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r platFormat, echo=TRUE, eval=FALSE}
+## List of platform
+UKB_Plat<-UKB_Data %>% 
+  distinct(SURVEY, PLAT_NAME, PLAT_NO, LAT_PLAT_DEC, LONG_PLAT_DEC, LAT_PLAT, LONG_PLAT, YEAR)
+
+## List of station
+UKB_Station<-UKB_Data %>% 
+  distinct(SITE, SURVEY, YEAR, STAT_NO, PLAT_NAME, PLAT_NO, LAT_STAT, LONG_STAT, LAT_PLAT, 
+           LONG_PLAT, LAT_PLAT_DEC, LONG_PLAT_DEC, LAT_STAT_DEC, LONG_STAT_DEC, DISTANCE, BEARING, DEPTH_STAT, DEPTH_PLAT)
+
+#write.csv(UKB_Station, "C:/Users/cg05/OneDrive - CEFAS/Science/Project - Commercial/INSITE/INSITE II/analysis/GIS_work/EcoSt_stations.csv")
+
+UKB_Data[which(UKB_Data$MD0 <= 0), "MD0"]<-abs(UKB_Data[which(UKB_Data$MD0 <= 0), "MD0"])
+UKB_ENV<-UKB_Data %>% 
+  group_by(PLAT_NAME) %>% 
+  summarise(depth_s = mean(DEPTH_STAT, na.rm=T),
+            depth_p = mean(DEPTH_PLAT, na.rm=T),
+            MD0avg = mean(MD0, na.rm = T),
+            mud = mean(SILT_CLAY, na.rm= T),
+            OM = mean(ORGANIC, na.rm = T))
+  
+## Platform categories
+UKB_Plat<-left_join(UKB_Plat, UKB_PlatCat, by = "PLAT_NAME")
+UKB_Station<-left_join(UKB_Station, UKB_PlatCat, by = "PLAT_NAME")
+UKB_ENV<-left_join(UKB_ENV, UKB_PlatCat, by = "PLAT_NAME")
+
+
+#### No stations / platform
+UKB_Plat_N <- UKB_Station %>% 
+  group_by(PLAT_CAT) %>% 
+  summarise(n=n())
+
+## Platform location
+UKB_Plat_location<-UKB_Plat %>% 
+  group_by(PLAT_CAT) %>% 
+  summarise(LAT_PLAT_avg = mean(LAT_PLAT_DEC, na.rm=T),
+            LONG_PLAT_avg = mean(LONG_PLAT_DEC, na.rm=T))
+
+colnames(GER_plat_avg)<-colnames(UKB_Plat_location)
+NS_Plat_location<-rbind(UKB_Plat_location, GER_plat_avg)
+
+#write.csv(NS_Plat_location, "C:/Users/cg05/OneDrive - CEFAS/Science/Project - Commercial/INSITE/INSITE II/analysis/data/NS_Plat_location.csv")
+
+## Platform parameters
+resp<-NS_Plat_location[!is.na(NS_Plat_location$LAT_PLAT_avg),]
+response<-resp
+coordinates(response) <- ~LONG_PLAT_avg+LAT_PLAT_avg
+mypoints <- SpatialPoints(response,proj4string = CRS("+proj=longlat +datum=WGS84 +no_defs"))
+
+## Matching the environmental data with
+rasStack = stack(BATHY, CURRENT, DISTCO, MUD)
+Plat.data <- extract(rasStack, mypoints)
+resp <- cbind(resp, Plat.data)
+
+#write.csv(resp,"./Essex/resp.csv")
+
+#1 = "Coarse Sediment", 2 = "Mixed Sediment", 3 = "Mud/Sandy Mud" , 4 = "Sand/Muddy Sand"),
+
+## Platform environment
+UKB_ENV<-UKB_ENV %>% 
+  group_by(PLAT_CAT) %>% 
+  summarise(depth_s = mean(depth_s, na.rm=T),
+            depth_p = mean(depth_p, na.rm=T),
+            MD0avg = mean(MD0avg, na.rm = T),
+            mud = mean(mud, na.rm= T),
+            OM = mean(OM, na.rm = T))
+
+## Complete depth platform with depth station
+UKB_ENV[is.na(UKB_ENV$depth_p), "depth_p"] <- UKB_ENV[is.na(UKB_ENV$depth_p), "depth_s"]
+## Complete depth platform with projected depth
+Miss<-as.data.frame(UKB_ENV[is.na(UKB_ENV$depth_p), "PLAT_CAT"])
+UKB_ENV[is.na(UKB_ENV$depth_p), "depth_p"]<-abs(resp[as.character(resp$PLAT_CAT) %in% Miss$PLAT_CAT, "Bathymetry"])
+
+Miss<-UKB_ENV[is.na(UKB_ENV$mud), "PLAT_CAT"]
+UKB_ENV[is.na(UKB_ENV$mud), "mud"]<-(resp[as.character(resp$PLAT_CAT) %in% Miss$PLAT_CAT, "Predicted_Mud_Fraction"]*100)
+
+UKB_ENV<-UKB_ENV[,c("PLAT_CAT","depth_p", "MD0avg", "mud", "OM")]
+UKB_ENV[is.na(UKB_ENV$OM),]
+UKB_ENV<-as.data.frame(UKB_ENV)
+
+## MD0avg
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "BEDEVERE", "MD0avg"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("LANCELOT"), "MD0avg"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "BP_ETAP", "MD0avg"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("LOMOND"), "MD0avg"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "CAVENDISH", "MD0avg"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("GORDON"), "MD0avg"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "CAYLEY", "MD0avg"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("MONTROSE"), "MD0avg"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "CICERO", "MD0avg"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("MORAY"), "MD0avg"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "DAUNTLESS", "MD0avg"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("SINGLEWELL_22/14"), "MD0avg"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "DAVY", "MD0avg"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("MORAY"), "MD0avg"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "DURWARD", "MD0avg"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("SINGLEWELL_22/14"), "MD0avg"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "GUINEVERE", "MD0avg"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("INDEFATIGABLE"), "MD0avg"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "JURA", "MD0avg"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("ISLAY", "BALVENIE"), "MD0avg"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "LINNHE", "MD0avg"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("BRUCE"), "MD0avg"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "MALLORY", "MD0avg"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("LANCELOT"), "MD0avg"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "PANDORA", "MD0avg"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("CULZEAN"), "MD0avg"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "PICKERILL", "MD0avg"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("LANCELOT"), "MD0avg"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "PLAT_214", "MD0avg"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("GLENLIVET"), "MD0avg"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "ROSS", "MD0avg"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("CYRUS"), "MD0avg"])))
+
+## Mud
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "ABERLOUR", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("ATLANTIC", "TORMORE"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "ALDER", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("SINGLEWELL_15/23"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "ANGUS", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("FIFE"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "AUK", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("FULMAR"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "BARQUE", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("AUDREY"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "BLENHIEM", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("SINGLEWELL_15/23"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "BLIGH", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("TEAL"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "BLOCK", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("ENSIGN"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "CAPTAIN", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("MORAY"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "CICERO", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("MORAY", "BALVENIE"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "CLIPPER", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("MALLORY"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "DON", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("THISTLE"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "EMERALD_North", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("CLADHAN"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "GRYPHON", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("BERYL"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "HUDSON", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("CLADHAN"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "JURA", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("ISLAY", "BALVENIE"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "LINNHE", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("BRUCE"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "LOCHSIDE", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("ATLANTIC", "TORMORE"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "OSPREY", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("CORMORANT"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "PICKERILL", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("LANCELOT", "GUINEVERE", "MALLORY"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "PLAT_214", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("GLENLIVET"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "SCOTT", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("HIGHLANDER"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "SINGLEWELL_16/21", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("ARUNDEL"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "SINGLEWELL_16/3", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("GRYPHON"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "SINGLEWELL_27/27", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("LOMOND"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "SINGLEWELL_29/12", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("JUDY"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "TIFFANY", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("DEVENICK"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "TONY", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("SALTIRE"), "OM"])))
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "TULLICH", "OM"]<-mean(c(as.numeric(UKB_ENV[UKB_ENV$PLAT_CAT %in% c("BERYL"), "OM"])))
+
+## Depth
+UKB_ENV[UKB_ENV$PLAT_CAT %in% "TRANCHE", "depth_p"]<-UKB_ENV[UKB_ENV$PLAT_CAT %in% c("LAGGAN"), "depth_p"]
+
+## German env
+GER<-resp[resp$PLAT_CAT %in% c("alpha ventus", "BeoFino", "BeoFinoII"),]
+GER_ENV<-data.frame(PLAT_CAT=GER$PLAT_CAT, depth_p=abs(GER$Bathymetry) , MD0avg=NA , mud=GER$Predicted_Mud_Fraction, OM=NA)
+
+## Finalisation
+NS_ENV<-rbind(UKB_ENV, GER_ENV)
+NS_ENV<-NS_ENV[!NS_ENV$PLAT_CAT %in% "GUILLEMOT",]
+NS_ENV<-cbind(NS_ENV, resp[, c("DistanceCo", "Current_Sp")])
+
+NS_ENV[NS_ENV$PLAT_CAT %in% "DON", "DistanceCo"]<-mean(c(as.numeric(NS_ENV[NS_ENV$PLAT_CAT %in% c("THISTLE"), "DistanceCo"])))
+NS_ENV[NS_ENV$PLAT_CAT %in% "MAGNUS", "DistanceCo"]<-mean(c(as.numeric(NS_ENV[NS_ENV$PLAT_CAT %in% c("EIDER", "TULLICH", "MURCHISON"), "DistanceCo"])))
+NS_ENV[NS_ENV$PLAT_CAT %in% "OTTER", "DistanceCo"]<-mean(c(as.numeric(NS_ENV[NS_ENV$PLAT_CAT %in% c("TERN"), "DistanceCo"])))
+NS_ENV[NS_ENV$PLAT_CAT %in% "SINGLEWELL_211/12", "DistanceCo"]<-mean(c(as.numeric(NS_ENV[NS_ENV$PLAT_CAT %in% c("EIDER", "TULLICH", "MURCHISON"), "DistanceCo"])))
+NS_ENV[NS_ENV$PLAT_CAT %in% "SINGLEWELL_211/12", "DistanceCo"]<-mean(c(as.numeric(NS_ENV[NS_ENV$PLAT_CAT %in% c("EIDER", "TULLICH", "MURCHISON"), "DistanceCo"])))
+NS_ENV[NS_ENV$PLAT_CAT %in% "TRANCHE", "DistanceCo"]<-mean(c(as.numeric(NS_ENV[NS_ENV$PLAT_CAT %in% c("LAGGAN"), "DistanceCo"])))
+
+NS_ENV[NS_ENV$PLAT_CAT %in% "DON", "Current_Sp"]<-mean(c(as.numeric(NS_ENV[NS_ENV$PLAT_CAT %in% c("THISTLE"), "Current_Sp"])))
+NS_ENV[NS_ENV$PLAT_CAT %in% "MAGNUS", "Current_Sp"]<-mean(c(as.numeric(NS_ENV[NS_ENV$PLAT_CAT %in% c("EIDER", "TULLICH", "MURCHISON"), "Current_Sp"])))
+NS_ENV[NS_ENV$PLAT_CAT %in% "OTTER", "Current_Sp"]<-mean(c(as.numeric(NS_ENV[NS_ENV$PLAT_CAT %in% c("TERN"), "Current_Sp"])))
+NS_ENV[NS_ENV$PLAT_CAT %in% "SINGLEWELL_211/12", "Current_Sp"]<-mean(c(as.numeric(NS_ENV[NS_ENV$PLAT_CAT %in% c("EIDER", "TULLICH", "MURCHISON"), "Current_Sp"])))
+NS_ENV[NS_ENV$PLAT_CAT %in% "SINGLEWELL_211/14", "Current_Sp"]<-mean(c(as.numeric(NS_ENV[NS_ENV$PLAT_CAT %in% c("EIDER", "TULLICH", "MURCHISON"), "Current_Sp"])))
+NS_ENV[NS_ENV$PLAT_CAT %in% "TRANCHE", "Current_Sp"]<-mean(c(as.numeric(NS_ENV[NS_ENV$PLAT_CAT %in% c("LAGGAN"), "Current_Sp"])))
+
+colnames(NS_ENV)<-c("PLAT_CAT", "Depth", "MD0", "Mud", "OM", "Distance", "Current")
+
+#save(NS_ENV, UKB_Station, UKB_Plat, UKB_Data, file="./NS_UKBandENV.RData")
+#save(NS_Plat_location, file="./NS_Plat_location.RData")
+
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+##END
