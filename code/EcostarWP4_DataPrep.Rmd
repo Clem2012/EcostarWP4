@@ -5,10 +5,11 @@ date: "2024-03-15"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, eval=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
 ## Installing required libraries and loading them:
-pkgs = c("tidyverse", "vegan", "patchwork", "sinkr", "PCDimension", "ggrepel", "lubridate", "sf", 
+pkgs = c("tidyverse", "vegan", "patchwork", "PCDimension", "ggrepel", "lubridate", "sf", 
          "rnaturalearth", "rnaturalearthdata", "rgeos", "raster")
 
 for(p in pkgs){
@@ -47,7 +48,7 @@ theme_set(theme_bw())
 
 The original source of the biological data are stored in data_raw, from which the Essex team (UoE) did a thorough clean, standardisation and various formatting, the details of which are fully explained in the "data_processed/README.md".
 
-```{r formatData, echo=TRUE, results = 'hide', warning=FALSE}
+```{r formatData, echo=TRUE, results = 'hide', warning=FALSE, eval=FALSE}
 ## Adding Juvenile data * not to be done again
 nameCor<-read.csv("./Name_Correction.csv")
 SITE<-UKB_speMaster %>% 
