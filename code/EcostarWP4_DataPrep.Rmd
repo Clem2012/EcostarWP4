@@ -43,6 +43,8 @@ GRAVEL<-raster("C:/Users/cg05/OneDrive - CEFAS/Science/Operation/Data/Environmen
 MUD<-raster("C:/Users/cg05/OneDrive - CEFAS/Science/Operation/Data/Environment/Mitchelletal_2019/Sediment predictions 1/Predicted_Mud_Fraction.tif")
 SAND<-raster("C:/Users/cg05/OneDrive - CEFAS/Science/Operation/Data/Environment/Mitchelletal_2019/Sediment predictions 1/Predicted_Sand_Fraction.tif")
 
+#small addition
+
 
 theme_set(theme_bw())
 ```
